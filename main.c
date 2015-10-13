@@ -7,6 +7,8 @@
 //#include <avr/pgmspace.h>
 //#include <string.h>
 
+#include "uart.h"
+
 #define FALSE         0
 #define TRUE          1
 
@@ -15,13 +17,21 @@
 #define SETBIT(REG, BIT)   (REG |= (1 << BIT))
 #define TSTBIT(REG, BIT)   (REG & (1 << BIT))
 
+
+
 int main(void) 
 {
-// configure PD0 for output and blink
+// configure PB0 for output and blink
 	DDRB = 1;
 	PORTB = 1;
 
+// setup uart
+	uart_init();
+
+	printf("Levitron collider started...\n\r");
+
 	while (1) {
+		printf("do work...\n\r");
 		_delay_ms(500);		
 		TGLBIT(PORTB,0);
 	}
