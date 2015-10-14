@@ -11,7 +11,7 @@ int uart_putchar(char c, FILE *stream) {
 	return 0;
 }
 
-int uart_getchar(FILE *sttream) {
+int uart_getchar(FILE *stream) {
 	while(!(UCSRA & (1<<RXC)));
 	return UDR;
 }
