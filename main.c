@@ -9,17 +9,7 @@
 
 #include "main.h"
 #include "uart.h"
-#include "adc.h"
-#include "pwm.h"
 
-
-Result_Buffer res_buf;
-
-ISR(ADC_vect)
-{
-	printf ("result: %d\r", ADC);
-	adc_start(OPAMP_CHAN);
-}
 
 void adc_init()
 {
@@ -44,22 +34,47 @@ void pwm_init()
 	ICR1 =  30000;
 }
 
+
+Result_Buffer sensor_buf;
+
+void add_result(int result)
+{
+	sensor_buf.buf[sensor_buf.curr=(++sensor_buf.curr)%_BUF_SIZE] = result;
+}
+
+ISR(ADC_vect)
+{
+	add_result(ADC);
+	adc_start(OPAMP_CHAN);
+}
+
+int filter_signal()
+{
+	int sum = 0;
+	for (int i = 0; i < _BUF_SIZE; i++)
+		sum += sensor_buf.buf[i];
+	return sum/_BUF_SIZE;
+}
+
 int main(void) 
 {
+	int signal = 0;
+
 	DDRB |= 3;
 	PORTB |= 1;
 
 
 	uart_init();
 	pwm_init();
-	//adc_init();
+	adc_init();
 	sei();
 
 	printf("Levitron collider started...\n\r");
-
+	
 	while (1) {
-		printf("do work...\n\r");
-		_delay_ms(500);		
+		signal = filter_signal();
+		printf("adc:%d\n\r", signal);
+		_delay_ms(300);		
 		TGLBIT(PORTB,0);
 	}
 	return 0;

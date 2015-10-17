@@ -8,8 +8,11 @@
 #define SETBIT(REG, BIT)   (REG |= (1 << BIT))
 #define TSTBIT(REG, BIT)   (REG & (1 << BIT))
 
+#define OPAMP_CHAN 3
+#define CALIB_CHAN 4
 
+#define _BUF_SIZE 16
 typedef struct {
-	int buf[16];
+	int buf[_BUF_SIZE];
 	unsigned char curr;
 } Result_Buffer;
