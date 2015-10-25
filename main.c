@@ -11,6 +11,12 @@
 #include "uart.h"
 
 
+void timer_init()
+{
+	TCCR0 = (1 << CS02);
+	TIMSK |= 1 << TOIE0;
+}
+
 void adc_init()
 {
 	ADMUX = (1<<REFS1) | (1<<REFS0) | OPAMP_CHAN; 
@@ -31,7 +37,7 @@ void pwm_init()
 	TCCR1B = (1<< WGM13) | (1<<CS10);   // clk/1
 	
 	OCR1A = 1000;
-	ICR1 =  30000;
+	ICR1 =  10000;
 }
 
 
@@ -46,6 +52,12 @@ ISR(ADC_vect)
 {
 	add_result(ADC);
 	adc_start(OPAMP_CHAN);
+	TGLBIT(PORTB,0);
+}
+
+ISR(TIMER0_OVF_vect)
+{
+	do_levitate();
 }
 
 int filter_signal()
@@ -54,6 +66,27 @@ int filter_signal()
 	for (int i = 0; i < _BUF_SIZE; i++)
 		sum += sensor_buf.buf[i];
 	return sum/_BUF_SIZE;
+}
+
+void change_pwm(int value)
+{
+	int cur = OCR1A;
+	cur += value*100;
+	if (cur > 80000)
+		cur = 80000;
+	if (cur < 1000)
+		cur = 1000;
+	OCR1A = cur;
+}
+
+void do_levitate()
+{
+	int signal = filter_signal();
+	if (signal > 120) {
+		change_pwm(-2);
+	} else if (signal < 100) {
+		change_pwm(2);
+	}
 }
 
 int main(void) 
@@ -67,6 +100,7 @@ int main(void)
 	uart_init();
 	pwm_init();
 	adc_init();
+	timer_init();
 	sei();
 
 	printf("Levitron collider started...\n\r");

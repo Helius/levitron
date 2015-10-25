@@ -11,7 +11,7 @@
 #define OPAMP_CHAN 3
 #define CALIB_CHAN 4
 
-#define _BUF_SIZE 16
+#define _BUF_SIZE 32
 typedef struct {
 	int buf[_BUF_SIZE];
 	unsigned char curr;
