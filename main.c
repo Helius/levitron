@@ -36,22 +36,30 @@ void pwm_init()
 	TCCR1A = (1<<COM1A1) | (1<<WGM12) | (1<<WGM11) | (0<<WGM10); // fast pwm with ICR1 top
 	TCCR1B = (1<< WGM13) | (1<<CS10);   // clk/1
 	
-	OCR1A = 1000;
+	OCR1A = 6000;
 	ICR1 =  10000;
 }
 
 
-Result_Buffer sensor_buf;
+Result_Buffer sensor_buf[2];
 
-void add_result(int result)
+void add_result(int ind, int result)
 {
-	sensor_buf.buf[sensor_buf.curr=(++sensor_buf.curr)%_BUF_SIZE] = result;
+	sensor_buf[ind].buf[sensor_buf[ind].curr=(++sensor_buf[ind].curr)%_BUF_SIZE] = result;
 }
 
 ISR(ADC_vect)
 {
-	add_result(ADC);
-	adc_start(OPAMP_CHAN);
+	static int channel;
+
+	if (channel == S_UP) {
+		add_result(0, ADC);
+		channel = S_DOWN;
+	} else {
+		add_result(1, ADC);
+		channel = S_UP;
+	}
+	adc_start(channel);
 	TGLBIT(PORTB,0);
 }
 
@@ -60,38 +68,37 @@ ISR(TIMER0_OVF_vect)
 	do_levitate();
 }
 
-int filter_signal()
+int filter_signal(int ind)
 {
 	int sum = 0;
 	for (int i = 0; i < _BUF_SIZE; i++)
-		sum += sensor_buf.buf[i];
+		sum += sensor_buf[ind].buf[i];
 	return sum/_BUF_SIZE;
 }
 
 void change_pwm(int value)
 {
-	int cur = OCR1A;
-	cur += value*100;
-	if (cur > 80000)
-		cur = 80000;
-	if (cur < 1000)
-		cur = 1000;
+	int cur = value*90;
 	OCR1A = cur;
 }
 
+
+#define K 1
+int new = 0;
+int diff = 0;
 void do_levitate()
 {
-	int signal = filter_signal();
-	if (signal > 120) {
-		change_pwm(-2);
-	} else if (signal < 100) {
-		change_pwm(2);
-	}
+	int up = filter_signal(0);
+	int dn = filter_signal(1);
+	diff = dn-up-60;
+	new = 60 - (K*diff);
+	change_pwm(new);
+	
 }
 
 int main(void) 
 {
-	int signal = 0;
+	int up, dn = 0;
 
 	DDRB |= 3;
 	PORTB |= 1;
@@ -106,8 +113,9 @@ int main(void)
 	printf("Levitron collider started...\n\r");
 	
 	while (1) {
-		signal = filter_signal();
-		printf("adc:%d\n\r", signal);
+		up = filter_signal(0);
+		dn = filter_signal(1);
+		printf("adc:up:%d dn:%d diff:%d\t diff=%d, new=%d\n\r", up, dn, dn-up, diff, new);
 		_delay_ms(300);		
 		TGLBIT(PORTB,0);
 	}

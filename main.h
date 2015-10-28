@@ -10,6 +10,8 @@
 
 #define OPAMP_CHAN 3
 #define CALIB_CHAN 4
+#define S_UP     2
+#define S_DOWN   1
 
 #define _BUF_SIZE 32
 typedef struct {
