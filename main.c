@@ -13,14 +13,14 @@
 
 void timer_init()
 {
-	TCCR0 = (1 << CS02);
+	TCCR0 =(1 << CS01) | (1 << CS00);
 	TIMSK |= 1 << TOIE0;
 }
 
 void adc_init()
 {
 	ADMUX = (1<<REFS1) | (1<<REFS0) | OPAMP_CHAN; 
-	ADCSRA = (1<<ADEN) | (1<<ADIE) | (1<<ADPS2) | (1<<ADPS1) | (1<<ADPS0);
+	ADCSRA = (1<<ADEN) | (1<<ADIE) | (1<<ADPS2) | (0<<ADPS1) | (1<<ADPS0);
 	ADCSRA |= (1<<ADSC);
 }
 
@@ -60,7 +60,7 @@ ISR(ADC_vect)
 		channel = S_UP;
 	}
 	adc_start(channel);
-	TGLBIT(PORTB,0);
+	//TGLBIT(PORTB,0);
 }
 
 ISR(TIMER0_OVF_vect)
@@ -78,7 +78,7 @@ int filter_signal(int ind)
 
 void change_pwm(int value)
 {
-	int cur = value*90;
+	int cur = value*95;
 	OCR1A = cur;
 }
 
@@ -86,14 +86,21 @@ void change_pwm(int value)
 #define K 1
 int new = 0;
 int diff = 0;
+
 void do_levitate()
 {
+	SETBIT(PORTB,0);
 	int up = filter_signal(0);
 	int dn = filter_signal(1);
-	diff = dn-up-60;
+	diff = dn-up-70;
 	new = 60 - (K*diff);
-	change_pwm(new);
 	
+	//if (new > 80)
+	//	new = 50;
+	if (new < 0)
+		new = 0;
+	change_pwm(new);
+	CLRBIT(PORTB,0);
 }
 
 int main(void) 
@@ -117,7 +124,7 @@ int main(void)
 		dn = filter_signal(1);
 		printf("adc:up:%d dn:%d diff:%d\t diff=%d, new=%d\n\r", up, dn, dn-up, diff, new);
 		_delay_ms(300);		
-		TGLBIT(PORTB,0);
+		//TGLBIT(PORTB,0);
 	}
 	return 0;
 }
