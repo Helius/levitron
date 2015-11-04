@@ -13,7 +13,7 @@
 #define S_UP     2
 #define S_DOWN   1
 
-#define _BUF_SIZE 32
+#define _BUF_SIZE 4
 typedef struct {
 	int buf[_BUF_SIZE];
 	unsigned char curr;
