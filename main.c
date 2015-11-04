@@ -34,23 +34,34 @@ void adc_start(int channel)
 void pwm_init()
 {
 	TCCR1A = (1<<COM1A1) | (1<<WGM12) | (1<<WGM11) | (0<<WGM10); // fast pwm with ICR1 top
-	TCCR1B = (1<< WGM13) | (1<<CS10);   // clk/1
-	
-	OCR1A = 300;
+	TCCR1B = (1 << WGM13) | (1<<CS10);   // clk/1
+	//TIMSK |= (1 << OCIE1A); // interrupt on compare
+	// init value of pwm	
+	OCR1A = 200;
 	ICR1 =  1000;
 }
 
+// interrupt on compare PWM timer
+/*ISR(TIMER1_COMPA_vect)
+{
+	if (TCNT1 > 100) {
+	SETBIT(PORTB,0);
+	_delay_us(10);
+	CLRBIT(PORTB,0);
+	}
+}*/
+
 
 Result_Buffer sensor_buf[2];
-//int adjust = 0;
+int adjust = 0;
 
 void add_result(int ind, int result)
 {
 	sensor_buf[ind].buf[sensor_buf[ind].curr=(++sensor_buf[ind].curr)%_BUF_SIZE] = result;
 }
-
 ISR(ADC_vect)
 {
+	//SETBIT(PORTB,0);
 	static int channel;
 
 	if (channel == S_UP) {
@@ -60,11 +71,11 @@ ISR(ADC_vect)
 		add_result(1, ADC);
 		channel = CALIB_CHAN;
 	} else {
-	//	adjust = ADC;
+		adjust = ADC;
 		channel = S_UP;
 	}
 	adc_start(channel);
-	//TGLBIT(PORTB,0);
+	//CLRBIT(PORTB,0);
 }
 
 int filter_signal(int ind)
@@ -84,9 +95,11 @@ void change_pwm(int value)
 
 int new = 0;
 int diff = 0;
-int K = 5;
+int Kp = 12;
 int Kd = 10;
 int S = 0;
+int Op = 0;
+int Od = 0;
 
 int abs (int val)
 {
@@ -99,18 +112,12 @@ void do_levitate()
 	int up = filter_signal(0);
 	int dn = filter_signal(1);
 	diff = dn-up-100;
-/*
-	if (abs(diff) < 6)
-		K = 15;
-	else if (abs(diff) < 10)
-		K = 1;
-	else if (abs(diff) < 20)
-		K = 1;
-*/
+	
+	Kd = 20*adjust/1000;
 
 	static int cnt = 0;
 	static int prevDiff = 0;
-	if (++cnt > 15) {
+	if (++cnt > 10) {
 		cnt = 0;
 		S = diff - prevDiff;
 		prevDiff = diff;
@@ -119,7 +126,9 @@ void do_levitate()
 	if (diff < -50)
 		return;
 
-	new = 30 - (K*diff)/5 - (Kd*S)/10;
+	Op = (Kp*diff)/10; // пропорциональная составляющая
+	Od = (Kd*S)/10;    // дифференциальная составляющая
+	new = 30 - Op - Od;
 	
 	if (new < 0)
 		new = 0;
@@ -142,7 +151,7 @@ int main(void)
 	uart_init();
 	printf("Levitron collider started...\n\r");
 	pwm_init();
-	//adc_init();
+	adc_init();
 	timer_init();
 	sei();
 
@@ -150,7 +159,10 @@ int main(void)
 	while (1) {
 		up = filter_signal(0);
 		dn = filter_signal(1);
-		printf("adc:up:%d dn:%d diff:%d\t diff=%d,S=%d\tK=%d, new=%d\n\r", up, dn, dn-up, diff, S, K, new);
+		printf("up:%d dn:%d diff:%d\t"
+				    "Kp:%d, Kd:%d diff:%d\tOp:%d\tOd:%d\tnew=%d\n\r", 
+						up, dn, dn-up, 
+						Kp, Kd, diff, Op, Od , new);
 		_delay_ms(30);		
 		//TGLBIT(PORTB,0);
 	}
