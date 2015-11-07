@@ -1,6 +1,6 @@
 TARGET_NAME       = main
 DEVICE  = atmega8
-F_CPU   = 8000000	# в Герцах
+F_CPU   = 20000000	# в Герцах
 
 FUSE_L  = ff
 FUSE_H  = 09

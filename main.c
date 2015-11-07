@@ -14,7 +14,7 @@
 #define MODE_CALIBRATE 0
 #define MODE_LEVITATE  1
 
-#define CAL_NMB 30
+#define CAL_NMB 32
 volatile char mode;
 int calibration[2][CAL_NMB];// store sensor error signal for different PWM value
 
@@ -27,29 +27,54 @@ void timer_init()
 void adc_init()
 {
 	ADMUX = (1<<REFS1) | (1<<REFS0) | OPAMP_CHAN; 
-	ADCSRA = (1<<ADEN) | (1<<ADIE) | (1<<ADPS2) | (0<<ADPS1) | (0<<ADPS0);
-	ADCSRA |= (1<<ADSC);
+	ADCSRA = (1<<ADEN) | (1<<ADIE) | (1<<ADPS2) | (1<<ADPS1) | (1<<ADPS0);
+	//ADCSRA |= (1<<ADSC);
 }
 
-void adc_start(int channel)
+void adc_start(int ch)
 {
 	ADMUX &= 0xF0;
-	ADMUX |= channel & 0x0F;
+	ADMUX |= ch & 0x0F;
 	ADCSRA |= (1<<ADSC);
 }
 
 #define PWM_MAX 400
+#define PWM_PERCENT PWM_MAX/100
 
 void pwm_init()
 {
 	TCCR1A = (1<<COM1A1) | (1<<WGM12) | (1<<WGM11) | (0<<WGM10); // fast pwm with ICR1 top
-	TCCR1B = (1 << WGM13) | (1<<CS10);   // clk/1
+	TCCR1B = (1 << WGM13) | (0<<CS12) | (0<<CS11) | (1<<CS10);   // clk/1
 	//TIMSK |= (1 << OCIE1A); // interrupt on compare
+	//TIMSK |= (1 << TOIE1); // interrupt on compare
 	// init value of pwm	
-	OCR1A = 0; // should be 0 for calibration
 	ICR1 =  PWM_MAX;
+	OCR1A = PWM_PERCENT; // should be a little for calibration
+
+	// init external interrupt on failing edge
+	MCUCR = (1 << ISC11);
+	GICR = 1 << INT1;
+	CLRBIT(DDRD,3);
+	SETBIT(PORTD,3);
 }
 
+volatile int channel = S_UP;
+ISR(INT1_vect)
+{
+	_delay_us(10);
+	//SETBIT(PORTB,0);
+	if (channel == S_UP)
+		adc_start(channel);
+}
+
+/*
+//ISR(TIMER1_OVF_vect)
+ISR(TIMER1_COMPA_vect)
+{
+	TGLBIT(PORTB,0);
+	printf("%d\n\r",TIFR);
+}
+*/
 
 Result_Buffer sensor_buf[2];
 int adjust = 0;
@@ -64,22 +89,26 @@ void add_result(int ind, int result)
 
 ISR(ADC_vect)
 {
-	//SETBIT(PORTB,0);
-	static int channel;
-
 	if (channel == S_UP) {
 		add_result(0, ADC);
 		channel = S_DOWN;
+		adc_start(channel);
 	} else if (channel == S_DOWN){
 		add_result(1, ADC);
 		channel = CALIB_CHAN;
+		adc_start(channel);
 		//channel = S_UP;
 	} else {
 		adjust = ADC;
 		channel = S_UP;
+		if (mode == MODE_LEVITATE) {
+			SETBIT(PORTB,0);
+			do_levitate();
+			CLRBIT(PORTB,0);
+		}
+	//	CLRBIT(PORTB,0);
 	}
-	adc_start(channel);
-	//CLRBIT(PORTB,0);
+	//adc_start(channel);
 }
 
 int filter_signal(int ind)
@@ -90,9 +119,13 @@ int filter_signal(int ind)
 	return sum/_BUF_SIZE;
 }
 
-void change_pwm(int value)
+
+void change_pwm(unsigned int value)
 {
-	OCR1A = (ICR1*value)/111;
+	if (value == 0)
+		OCR1A = PWM_PERCENT;
+	else
+		OCR1A = value * PWM_PERCENT;
 }
 
 void print_calibrate()
@@ -101,7 +134,6 @@ void print_calibrate()
 	for (int i = 0; i < CAL_NMB; i++)
 		printf("%d\t%d\n\r", calibration[0][i], calibration[1][i]);
 	printf("-----------\n\r");
-	
 }
 
 int new = 0;
@@ -111,21 +143,20 @@ int Op = 0;
 int Od = 0;
 int calibrate_index = 0;
 
-int Kp = 12;
-int Kd = 28;
-unsigned int limit = 25;
+int Kp = 14;
+int Kd = 25;
+unsigned int limit = 15;
 
 #define PWM_CAL_STEP ((PWM_MAX*6)/(10*CAL_NMB))
 
 void do_levitate()
 {
-	SETBIT(PORTB,0);
 	static int cnt = 0;
 	int up = filter_signal(0);
 	int dn = filter_signal(1);
 	int true_diff = dn-up;
 
-	Kd = (30*adjust)/1000;
+	Kp = (50*adjust)/1024;
 
 	if (mode == MODE_CALIBRATE) {
 		if (++cnt > 100) {
@@ -154,7 +185,7 @@ void do_levitate()
 		calibrate_index = CAL_NMB-1;
 
 	static int prevDiff = 0;
-	diff = dn - up - 100 - calibration[1][calibrate_index];
+	diff = dn - up - calibration[1][calibrate_index];
 
 	if (++cnt > limit) {
 		cnt = 0;
@@ -162,23 +193,24 @@ void do_levitate()
 		prevDiff = diff;
 	}
 
-
-	Op = (Kp*diff)/10; // пропорциональная составляющая
-	Od = (Kd*S)/10;    // дифференциальная составляющая
-	new = 40 - Op - Od;
+	Op = (Kp*-diff); // пропорциональная составляющая
+	//Od = (Kd*S)/16;    // дифференциальная составляющая
 	
+	new = Op;// - Od;
+
+	//change_pwm(30);
+//	return;
+
+	if (new < 0)
+		new = 0;
 	if (diff < -70) {
 		change_pwm(0);
 		return;
 	}
-
-	if (new < 0)
-		new = 0;
-	if (new > 60)
+	if (new > 80)
 		return;
-	change_pwm(new);
-	CLRBIT(PORTB,0);
 
+	change_pwm(new);
 }
 
 int main(void) 
@@ -191,12 +223,13 @@ int main(void)
 	SETBIT(PORTB,0);
 	
 	mode = MODE_CALIBRATE;
+	//mode = MODE_LEVITATE;
 
 	uart_init();
 	printf("Levitron collider started...\n\r");
-	pwm_init();
 	adc_init();
 	timer_init();
+	pwm_init();
 	sei();
 
 	
@@ -204,10 +237,12 @@ int main(void)
 		if (mode == MODE_LEVITATE) {
 			up = filter_signal(0);
 			dn = filter_signal(1);
+
 			printf("up:%d dn:%d diff:%d\t"
 					"Kp:%d, Kd:%d[%d] diff:%d \tOp:%d\tOd:%d\tnew=%d[%d]{%d}\n\r", 
 					up, dn, dn-up-calibration[1][calibrate_index], 
 					Kp, Kd, limit, diff, Op, Od , new, OCR1A, calibration[1][calibrate_index]);
+
 			_delay_ms(30);		
 		}
 	}
@@ -217,6 +252,9 @@ int main(void)
 ISR(TIMER0_OVF_vect)
 {
 	static int i = 0;
-	if (++i & 0x01)
+	if (mode == MODE_CALIBRATE && !(++i%11)) {
+		SETBIT(PORTB,0);
 		do_levitate();
+		CLRBIT(PORTB,0);
+	}
 }
